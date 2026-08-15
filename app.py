@@ -5,7 +5,7 @@ import json
 import os
 
 # --- CONFIGURAÇÃO DE ACESSO ---
-SENHA_CORRETA = "1234"  # Troque o 1234 pela sua senha segura quando quiser!
+SENHA_CORRETA = "TITITO"  # 👈 DIGITE SUA SENHA SEGURA AQUI (MANTENHA AS ASPAS)
 ARQUIVO_DADOS = "dados_credito.json"
 
 st.set_page_config(page_title="Controle Seguro", layout="wide")
@@ -55,7 +55,7 @@ for i, venda in enumerate(st.session_state.vendas):
         if hoje > data_venc:
             dias_atraso = (hoje - data_venc).days
             
-            # REGRA NOVA: Juros só começam a partir do 31º dia de atraso
+            # REGRA: Juros só começam a partir do 31º dia de atraso
             if dias_atraso > 30:
                 dias_com_juros = dias_atraso - 30
                 val_atualizado = val_orig * ((1 + 0.02) ** (dias_com_juros / 30))
@@ -132,11 +132,13 @@ with aba_relatorio:
         st.dataframe(df.drop(columns=["Índice"]), use_container_width=True)
 
         st.subheader("Dar Baixa em Pagamento")
-        opcoes_baixar = [f"Item {row['Índice']} - Cliente {row['Código Cliente (ID)']} ({row['Valor Original']})" for _, row in df.iterrows() if "Pago" not in row['Situação']]
+        
+        # Correção do erro técnico de separação do Índice aqui:
+        opcoes_baixar = {f"Cliente {row['Código Cliente (ID)']} (Original: {row['Valor Original']}) - Item {row['Índice']}": row['Índice'] for _, row in df.iterrows() if "Pago" not in row['Situação']}
         
         if opcoes_baixar:
-            selecionado = st.selectbox("Selecione o registro para dar baixa:", opcoes_baixar)
-            idx_original = int(selecionado.split(" "))
+            selecionado = st.selectbox("Selecione o registro para dar baixa:", list(opcoes_baixar.keys()))
+            idx_original = opcoes_baixar[selecionado]
             
             if st.button("Confirmar Recebimento"):
                 st.session_state.vendas[idx_original]["status"] = "Pago"
