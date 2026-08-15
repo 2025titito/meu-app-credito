@@ -8,7 +8,7 @@ import os
 SENHA_CORRETA = "TITITO"  # 👈 DIGITE SUA SENHA SEGURA AQUI (MANTENHA AS ASPAS)
 ARQUIVO_DADOS = "dados_credito.json"
 
-st.set_page_config(page_title="Controle Seguro", layout="wide")
+st.set_page_config(page_title="Loja São José", layout="wide")
 
 def carregar_dados():
     if os.path.exists(ARQUIVO_DADOS):
@@ -27,7 +27,7 @@ if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔒 Sistema de Controle Restrito")
+    st.title("🔒 Loja São José")
     senha_digitada = st.text_input("Digite sua senha de acesso:", type="password")
     if st.button("Entrar"):
         if senha_digitada == SENHA_CORRETA:
