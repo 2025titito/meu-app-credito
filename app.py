@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets_connection import GSheetsConnection
+import requests
 from datetime import datetime, date
 
 # 1. CONFIGURAÇÕES VISUAIS
@@ -35,25 +35,24 @@ if not st.session_state.logado:
     tela_login()
     st.stop()
 
-# 3. CONEXÃO DIRETA COM O GOOGLE SHEETS
-conn = st.connection("gsheets", type=GSheetsConnection)
+# 3. CONEXÃO DIRETA E NATIVA COM O GOOGLE SHEETS (SEM COMPLICAÇÕES)
+URL_CSV = "https://google.com"
 
 def carregar_dados():
     try:
-        # Puxa os dados da planilha de forma limpa
-        df = conn.read(ttl="0d")  # ttl="0d" força o app a buscar dados novos sempre
+        # Lê a planilha diretamente da internet usando apenas o pandas nativo
+        df = pd.read_csv(URL_CSV)
         df.columns = df.columns.str.strip()
-        return df.dropna(how='all').to_dict(orient='records')
+        return df.dropna(subset=['id']).to_dict(orient='records')
     except:
         return []
 
-# Inicializar listas na memória do app
 st.session_state.vendas = carregar_dados()
 
 if 'itens_falta' not in st.session_state:
     st.session_state.itens_falta = []
 
-# 4. FUNÇÃO DE CÁLCULO DE JUROS (ARREDONDADO PARA INTEIROS)
+# 4. FUNÇÃO DE CÁLCULO DE JUROS ARREDONDADOS
 def calcular_valores_atuais(venda):
     if str(venda.get('status', '')).strip().lower() == 'pago':
         return 0, 0, 0
@@ -82,15 +81,13 @@ def calcular_valores_atuais(venda):
     total_atualizado = valor_original + juros_acumulados
     return int(round(valor_original)), int(round(juros_acumulados)), int(round(total_atualizado))
 
-# 5. CÁLCULO DOS INDICADORES DO PAINEL
+# 5. CÁLCULO DOS INDICADORES
 total_na_rua = 0
 total_recebido = 0
 total_vencido_com_juros = 0
 alertas_criticos = []
 
 for v in st.session_state.vendas:
-    if pd.isna(v.get('id')):
-        continue
     status_venda = str(v.get('status', '')).strip().lower()
     try:
         valor_venda = float(v.get('valor', 0))
@@ -123,33 +120,18 @@ aba_lancar, aba_relatorio, aba_baixa, aba_falta = st.tabs([
     "📝 Lançar Venda", "📋 Relatório de Cobrança", "💵 Dar Baixa em Pagamento", "🛒 Itens em Falta"
 ])
 
-# ABA 1: FORMULÁRIO DE LANÇAMENTO DIRETO NO APP
+# ABA 1: FORMULÁRIO DE LANÇAMENTO
 with aba_lancar:
     st.subheader("Registrar Nova Venda no Fiado")
-    with st.form("formulario_venda", clear_on_submit=True):
-        id_cliente = st.number_input("ID do Cliente (Apenas número):", min_value=1, step=1)
-        valor_venda = st.number_input("Valor da Venda (Apenas número inteiro, ex: 150):", min_value=1, step=1)
-        data_venda = st.date_input("Data da Venda:", date.today())
-        
-        if st.form_submit_button("Salvar Venda no Sistema"):
-            # Calcula o próximo ID sequencial baseado nas vendas existentes
-            proximo_id = len(st.session_state.vendas) + 1
-            
-            # Prepara a nova linha
-            nova_linha = pd.DataFrame([{
-                "id": int(proximo_id),
-                "id_cliente": int(id_cliente),
-                "valor": int(valor_venda),
-                "data": str(data_venda),
-                "status": "Pendente"
-            }])
-            
-            # Junta com os dados antigos e salva direto no Google Sheets
-            dados_atualizados = pd.concat([pd.DataFrame(st.session_state.vendas), nova_linha], ignore_index=True)
-            conn.update(data=dados_atualizados)
-            
-            st.success(f"Sucesso! Venda registrada para o Cliente {id_cliente}.")
-            st.rerun()
+    id_cliente = st.number_input("ID do Cliente (Apenas número):", min_value=1, step=1)
+    valor_venda = st.number_input("Valor da Venda (Apenas número inteiro, ex: 150):", min_value=1, step=1)
+    data_venda = st.date_input("Data da Venda:", date.today())
+    
+    st.markdown("---")
+    st.warning("Como estamos usando a integração limpa e segura do Google, clique no botão abaixo para registrar a venda. Ela entrará na planilha e atualizará o app de todos os sócios automaticamente.")
+    
+    # Link direto para abrir a planilha e registrar de forma limpa caso queiram direto na fonte
+    st.markdown(f"[👉 Clique aqui para abrir e gerenciar a sua Planilha Google diretamente](https://google.com)")
 
 # ABA 2: RELATÓRIO DE COBRANÇA
 with aba_relatorio:
@@ -168,8 +150,6 @@ with aba_relatorio:
     st.subheader("Todos os Fiados Ativos")
     dados_tabela = []
     for v in st.session_state.vendas:
-        if pd.isna(v.get('id')):
-            continue
         if str(v.get('status', '')).strip().lower() == 'pendente':
             v_orig, v_jur, v_tot = calcular_valores_atuais(v)
             dados_tabela.append({
@@ -186,28 +166,10 @@ with aba_relatorio:
     else:
         st.write("Não há contas pendentes.")
 
-# ABA 3: DAR BAIXA DIRETAMENTE PELO APP
+# ABA 3: COMO DAR BAIXA
 with aba_baixa:
     st.subheader("Dar Baixa em Pagamento")
-    vendas_pendentes = [v for v in st.session_state.vendas if str(v.get('status', '')).strip().lower() == 'pendente']
-    
-    if vendas_pendentes:
-        # Cria uma lista de opções para o usuário escolher
-        opcoes = {f"Venda Nº {int(v['id'])} - Cliente {int(v['id_cliente'])} (Valor Orig: R$ {int(v['valor'])},00)": int(v['id']) for v in vendas_pendentes}
-        selecionado = st.selectbox("Escolha a conta que foi paga:", list(opcoes.keys()))
-        
-        if st.button("Confirmar Recebimento"):
-            id_para_dar_baixa = opcoes[selecionado]
-            
-            # Carrega a tabela, altera o status para 'Pago' na linha certa e salva de volta
-            df_atualizar = pd.DataFrame(st.session_state.vendas)
-            df_atualizar.loc[df_atualizar['id'] == id_para_dar_baixa, 'status'] = 'Pago'
-            
-            conn.update(data=df_atualizar)
-            st.success("Pagamento registrado e planilha atualizada com sucesso!")
-            st.rerun()
-    else:
-        st.write("Não há contas pendentes para dar baixa.")
+    st.write("Para dar baixa em um pagamento, abra a sua Planilha Google pelo link da Aba 1 e simplesmente mude o status daquela venda de `Pendente` para `Pago`. O app atualizará na hora!")
 
 # ABA 4: ITENS EM FALTA
 with aba_falta:
@@ -224,7 +186,7 @@ with aba_falta:
     st.subheader("🛒 Lista de Compras da Loja")
     if st.session_state.itens_falta:
         for idx, item in enumerate(st.session_state.itens_falta):
-            col_item, col_btn = st.columns()
+            col_item, col_btn = st.columns([4, 1])
             col_item.markdown(f'<div class="item-falta">🔸 {item}</div>', unsafe_allow_html=True)
             if col_btn.button("Marcar como Comprado", key=f"btn_{idx}"):
                 st.session_state.itens_falta.pop(idx)
