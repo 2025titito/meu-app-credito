@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+from streamlit_gsheets_connection import GSheetsConnection
 from datetime import datetime, date
 
 # 1. CONFIGURAÇÕES VISUAIS
