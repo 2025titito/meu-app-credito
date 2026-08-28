@@ -34,11 +34,10 @@ st.session_state.vendas = carregar_dados()
 if 'itens_falta' not in st.session_state:
     st.session_state.itens_falta = []
 
-# 3. CONTROLE DE ACESSO (TELA DE LOGIN)
+# 3. CONTROLE DE ACESSO (TELA DE LOGIN COM SENHA PERSONALIZADA)
 def tela_login():
     st.title("🔑 Acesso ao Sistema")
-    # Altere a senha da sua loja entre as aspas abaixo
-    SENHA_CORRETA = "loja123" 
+    SENHA_CORRETA = "TITITO" 
     senha_digitada = st.text_input("Digite a senha da loja:", type="password")
     if st.button("Entrar"):
         if senha_digitada == SENHA_CORRETA:
@@ -81,8 +80,6 @@ def calcular_valores_atuais(venda):
         juros_acumulados = valor_com_juros - valor_original
     
     total_atualizado = valor_original + juros_acumulados
-    
-    # Arredonda para valores inteiros (sem centavos) para facilitar o troco na loja
     return int(round(valor_original)), int(round(juros_acumulados)), int(round(total_atualizado))
 
 # 5. CÁLCULO DOS INDICADORES DO PAINEL
@@ -126,7 +123,7 @@ aba_lancar, aba_relatorio, aba_baixa, aba_falta = st.tabs([
     "📝 Lançar Venda", "📋 Relatório de Cobrança", "💵 Dar Baixa em Pagamento", "🛒 Itens em Falta"
 ])
 
-# ABA 1: COMO ADICIONAR DADOS
+# ABA 1: COMO ADICIONAR DADOS (LINK CORRIGIDO DA SUA PLANILHA)
 with aba_lancar:
     st.subheader("Registrar Nova Venda no Fiado")
     st.info("Adicione as novas linhas diretamente na sua Planilha Google. O aplicativo irá puxar os dados de lá instantaneamente para todos os sócios.")
@@ -172,7 +169,7 @@ with aba_baixa:
     st.subheader("Dar Baixa (Receber Dinheiro)")
     st.write("Para dar baixa em um pagamento, abra a sua Planilha Google e mude o status daquela venda de `Pendente` para `Pago`.")
 
-# ABA 4: ITENS EM FALTA (NOVA FUNÇÃO)
+# ABA 4: ITENS EM FALTA
 with aba_falta:
     st.subheader("📝 Comunicar Item em Falta")
     novo_item = st.text_input("Qual produto está faltando na prateleira?", placeholder="Ex: Arroz Tipo 1, Detergente Maçã...")
@@ -187,7 +184,7 @@ with aba_falta:
     st.subheader("🛒 Lista de Compras da Loja")
     if st.session_state.itens_falta:
         for idx, item in enumerate(st.session_state.itens_falta):
-            col_item, col_btn = st.columns([4, 1])
+            col_item, col_btn = st.columns()
             col_item.markdown(f'<div class="item-falta">🔸 {item}</div>', unsafe_allow_html=True)
             if col_btn.button("Marcar como Comprado", key=f"btn_{idx}"):
                 st.session_state.itens_falta.pop(idx)
