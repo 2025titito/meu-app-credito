@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import json
 import os
+import math
 from datetime import datetime, date
 
 # 1. CONFIGURAÇÕES VISUAIS
@@ -13,29 +13,31 @@ st.markdown("""
     .stButton>button { background-color: #2e7d32; color: white; border-radius: 5px; }
     .stButton>button:hover { background-color: #1b5e20; color: white; }
     .alerta-critico { background-color: #ffebee; color: #c62828; padding: 15px; border-radius: 5px; border-left: 5px solid #c62828; margin-bottom: 10px; }
+    .item-falta { background-color: #fff3e0; color: #e65100; padding: 10px; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXÃO COM O GOOGLE SHEETS (LINK ATUALIZADO DA LOJA SÃO JOSÉ)
+# 2. CONEXÃO COM O GOOGLE SHEETS
 URL_DA_PLANILHA = "https://google.com"
 
 def carregar_dados():
     try:
-        # Lê os dados em tempo real da planilha online
         df = pd.read_csv(URL_DA_PLANILHA)
-        # Limpa espaços em branco nos nomes das colunas
         df.columns = df.columns.str.strip()
-        # Converte para o formato de lista do app
         return df.to_dict(orient='records')
-    except Exception as e:
+    except:
         return []
 
-# Busca sempre os dados mais recentes da planilha ao abrir a página
+# Inicializar dados do crediário e da lista de compras em falta
 st.session_state.vendas = carregar_dados()
+
+if 'itens_falta' not in st.session_state:
+    st.session_state.itens_falta = []
 
 # 3. CONTROLE DE ACESSO (TELA DE LOGIN)
 def tela_login():
     st.title("🔑 Acesso ao Sistema")
+    # Altere a senha da sua loja entre as aspas abaixo
     SENHA_CORRETA = "loja123" 
     senha_digitada = st.text_input("Digite a senha da loja:", type="password")
     if st.button("Entrar"):
@@ -52,21 +54,20 @@ if not st.session_state.logado:
     tela_login()
     st.stop()
 
-# 4. FUNÇÃO DE CÁLCULO DE JUROS
+# 4. FUNÇÃO DE CÁLCULO DE JUROS (ARREDONDADO PARA INTEIROS)
 def calcular_valores_atuais(venda):
     if str(venda.get('status', '')).strip().lower() == 'pago':
-        return 0.0, 0.0, 0.0
+        return 0, 0, 0
         
     try:
         valor_original = float(venda.get('valor', 0))
     except:
-        return 0.0, 0.0, 0.0
+        return 0, 0, 0
         
     try:
         data_venda = datetime.strptime(str(venda.get('data', '')).strip(), "%Y-%m-%d").date()
     except:
-        # Se a data estiver errada ou em outro formato, assume o valor original sem juros
-        return valor_original, 0.0, valor_original
+        return int(round(valor_original)), 0, int(round(valor_original))
         
     hoje = date.today()
     dias_atraso = (hoje - data_venda).days
@@ -80,19 +81,19 @@ def calcular_valores_atuais(venda):
         juros_acumulados = valor_com_juros - valor_original
     
     total_atualizado = valor_original + juros_acumulados
-    return valor_original, juros_acumulados, total_atualizado
+    
+    # Arredonda para valores inteiros (sem centavos) para facilitar o troco na loja
+    return int(round(valor_original)), int(round(juros_acumulados)), int(round(total_atualizado))
 
 # 5. CÁLCULO DOS INDICADORES DO PAINEL
-total_na_rua = 0.0
-total_recebido = 0.0
-total_vencido_com_juros = 0.0
+total_na_rua = 0
+total_recebido = 0
+total_vencido_com_juros = 0
 alertas_criticos = []
 
 for v in st.session_state.vendas:
-    # Ignora linhas completamente vazias da planilha
     if pd.isna(v.get('id')):
         continue
-        
     status_venda = str(v.get('status', '')).strip().lower()
     try:
         valor_venda = float(v.get('valor', 0))
@@ -100,7 +101,7 @@ for v in st.session_state.vendas:
         valor_venda = 0.0
         
     if status_venda == 'pago':
-        total_recebido += valor_venda
+        total_recebido += int(round(valor_venda))
     else:
         v_orig, v_jur, v_tot = calcular_valores_atuais(v)
         total_na_rua += v_orig
@@ -116,27 +117,20 @@ for v in st.session_state.vendas:
 st.title("🏪 Sistema de Controle de Crediário")
 
 col1, col2, col3 = st.columns(3)
-col1.metric("💰 Total Fiado na Rua (Original)", f"R$ {total_na_rua:,.2f}")
-col2.metric("✅ Total Recebido", f"R$ {total_recebido:,.2f}")
-col3.metric("🚨 Total Vencido (+30 dias com Juros)", f"R$ {total_vencido_com_juros:,.2f}")
+col1.metric("💰 Total Fiado na Rua (Original)", f"R$ {total_na_rua},00")
+col2.metric("✅ Total Recebido", f"R$ {total_recebido},00")
+col3.metric("🚨 Total Vencido (+30 dias arredondado)", f"R$ {total_vencido_com_juros},00")
 
 st.divider()
-aba_lancar, aba_relatorio, aba_baixa = st.tabs(["📝 Lançar Venda", "📋 Relatório de Cobrança", "💵 Dar Baixa em Pagamento"])
+aba_lancar, aba_relatorio, aba_baixa, aba_falta = st.tabs([
+    "📝 Lançar Venda", "📋 Relatório de Cobrança", "💵 Dar Baixa em Pagamento", "🛒 Itens em Falta"
+])
 
 # ABA 1: COMO ADICIONAR DADOS
 with aba_lancar:
     st.subheader("Registrar Nova Venda no Fiado")
-    st.info("Para garantir que os dados fiquem salvos para sempre, adicione as novas linhas diretamente na sua Planilha Google. O aplicativo irá puxar os dados de lá instantaneamente para todos os sócios.")
-    st.markdown(f"[👉 Clique aqui para abrir a sua Planilha Google](https://docs.google.com/spreadsheets/d/1fExWOzkkBk9qGpaaDP_pfnwnjiV90FSTAgnTOvAxgqs/)")
-    
-    st.markdown("""
-    **Como preencher uma nova linha na planilha:**
-    * **id:** Digite um número sequencial (ex: 1 para a primeira venda, 2 para a segunda...).
-    * **id_cliente:** Digite apenas o número do cliente (ex: `1` para o Cliente 1).
-    * **valor:** O valor da venda usando ponto no lugar da vírgula (ex: `150.50`).
-    * **data:** A data da venda no formato Ano-Mês-Dia (ex: `2026-08-28`).
-    * **status:** Escreva sempre `Pendente` para contas abertas.
-    """)
+    st.info("Adicione as novas linhas diretamente na sua Planilha Google. O aplicativo irá puxar os dados de lá instantaneamente para todos os sócios.")
+    st.markdown(f"[👉 Clique aqui para abrir a sua Planilha Google](https://google.com)")
 
 # ABA 2: RELATÓRIO DE COBRANÇA
 with aba_relatorio:
@@ -145,8 +139,8 @@ with aba_relatorio:
         for al in alertas_criticos:
             st.markdown(f"""
             <div class="alerta-critico">
-                ⚠️ <b>Cliente {al['id_cliente']}</b> está com a conta atrasada há <b>{al['dias']} dias</b>.<br>
-                Valor atualizado com juros: <b>R$ {al['valor']:,.2f}</b>
+                ⚠️ <b>Cliente {int(al['id_cliente'])}</b> está com a conta atrasada há <b>{al['dias']} dias</b>.<br>
+                Valor arredondado com juros: <b>R$ {al['valor']},00</b>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -163,9 +157,9 @@ with aba_relatorio:
                 "Cód. Venda": int(v.get('id')),
                 "ID Cliente": f"Cliente {int(v.get('id_cliente'))}",
                 "Data da Compra": v.get('data'),
-                "Valor Original": f"R$ {v_orig:,.2f}",
-                "Juros Acumulados": f"R$ {v_jur:,.2f}",
-                "Total Atualizado": f"R$ {v_tot:,.2f}"
+                "Valor Original": f"R$ {v_orig},00",
+                "Juros Acumulados": f"R$ {v_jur},00",
+                "Total Atualizado": f"R$ {v_tot},00"
             })
             
     if dados_tabela:
@@ -176,5 +170,27 @@ with aba_relatorio:
 # ABA 3: COMO DAR BAIXA
 with aba_baixa:
     st.subheader("Dar Baixa (Receber Dinheiro)")
-    st.write("Para dar baixa em um pagamento, basta abrir a sua Planilha Google e mudar o texto da coluna **status** daquela venda de `Pendente` para `Pago`.")
-    st.write("O aplicativo recalculará o faturamento e removerá o cliente da lista de cobrança no mesmo segundo!")
+    st.write("Para dar baixa em um pagamento, abra a sua Planilha Google e mude o status daquela venda de `Pendente` para `Pago`.")
+
+# ABA 4: ITENS EM FALTA (NOVA FUNÇÃO)
+with aba_falta:
+    st.subheader("📝 Comunicar Item em Falta")
+    novo_item = st.text_input("Qual produto está faltando na prateleira?", placeholder="Ex: Arroz Tipo 1, Detergente Maçã...")
+    
+    if st.button("Adicionar à Lista de Compras"):
+        if novo_item.strip():
+            st.session_state.itens_falta.append(novo_item.strip())
+            st.success(f"'{novo_item}' adicionado à lista!")
+            st.rerun()
+            
+    st.divider()
+    st.subheader("🛒 Lista de Compras da Loja")
+    if st.session_state.itens_falta:
+        for idx, item in enumerate(st.session_state.itens_falta):
+            col_item, col_btn = st.columns([4, 1])
+            col_item.markdown(f'<div class="item-falta">🔸 {item}</div>', unsafe_allow_html=True)
+            if col_btn.button("Marcar como Comprado", key=f"btn_{idx}"):
+                st.session_state.itens_falta.pop(idx)
+                st.rerun()
+    else:
+        st.info("Excelente! Nenhum item em falta no momento.")
