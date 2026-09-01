@@ -1,13 +1,16 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from streamlit_gsheets import GSheetsConnection
 
 # CONFIGURAÇÃO DO APLICATIVO
 st.set_page_config(page_title="Crediário - Loja São José", layout="wide", page_icon="🏬")
 
-# URL DA PLANILHA GOOGLE
-URL_PLANILHA = "https://google.com"
+# LINKS E CONFIGURAÇÃO DA PLANILHA GOOGLE
+LINK_ORIGINAL = "https://google.com"
+LINK_CSV = "https://google.com"
+
+# LINK DO SEU FORMULARIO GOOGLE (Cole o seu link copiado entre as aspas abaixo)
+LINK_FORMULARIO = "https://forms.gle/nsXr4yuL6Aiw2Ypo9"
 
 # 1. CONTROLE DE ACESSO (SENHA)
 if 'autenticado' not in st.session_state:
@@ -24,14 +27,17 @@ if not st.session_state['autenticado']:
             st.error("Senha incorreta! Verifique com os outros sócios.")
     st.stop()
 
-# 2. CONEXÃO DIRETA COM O GOOGLE SHEETS (LEITURA E ESCRITA SEM CHAVES CONFIGURADAS)
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_dados = conn.read(spreadsheet=URL_PLANILHA, ttl="2s")
-    df_dados.columns = [str(c).strip().lower() for c in df_dados.columns]
-except Exception as e:
-    st.error(f"Erro ao conectar com a Planilha: {e}")
-    df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao'])
+# 2. CARREGAMENTO DOS DADOS EM TEMPO REAL
+@st.cache_data(ttl=2)
+def carregar_dados():
+    try:
+        df = pd.read_csv(LINK_CSV)
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        return df
+    except Exception as e:
+        return pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao'])
+
+df_dados = carregar_dados()
 
 # 3. FUNÇÃO DE JUROS COMPOSTOS (2% ao mês após 30 dias de carência)
 def calcular_valor_atual(valor_original, data_venda_str, status):
@@ -60,13 +66,17 @@ def calcular_valor_atual(valor_original, data_venda_str, status):
     valor_atualizado = valor_original * ((1 + taxa_diaria) ** dias_efetivos_atraso)
     return int(round(valor_atualizado))
 
-# PROCESSAMENTO DOS JUROS
+# PROCESSAMENTO DE DADOS ADAPTADO PARA FORMULÁRIOS GOOGLE
+if 'carimbo de data/hora' in df_dados.columns:
+    df_dados = df_dados.rename(columns={'carimbo de data/hora': 'id'})
+
 if not df_dados.empty and 'valor' in df_dados.columns and 'data' in df_dados.columns and 'status' in df_dados.columns:
+    df_dados['status'] = df_dados['status'].fillna('Pendente')
     df_dados['saldo_devedor_atual'] = df_dados.apply(
         lambda r: calcular_valor_atual(r['valor'], r['data'], r['status']), axis=1
     )
 else:
-    df_dados['saldo_devedor_atual'] = 0
+    df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'])
 
 # INTERFACE PRINCIPAL
 st.title("🏬 Painel de Crediário - Loja São José")
@@ -74,7 +84,7 @@ st.title("🏬 Painel de Crediário - Loja São José")
 aba1, aba2, aba3, aba4 = st.tabs([
     "📊 Saldo & Devedores", 
     "📝 Cadastrar Novo Fiado", 
-    "💰 Consultar Histórico / Baixas", 
+    "💰 Dar Baixa / Pagamentos", 
     "📦 Itens em Falta"
 ])
 
@@ -93,56 +103,32 @@ with aba1:
     else:
         st.success("Não há nenhum saldo pendente ou devedor registrado!")
 
-# ABA 2: FORMULÁRIO DE CADASTRO DIRETO NO APP (SEM ABRIR A PLANILHA)
+# ABA 2: FORMULÁRIO GOOGLE EMBUTIDO DIRETO NO APP
 with aba2:
     st.header("📝 Cadastrar Nova Conta Fiada")
-    st.write("Preencha os dados abaixo. Ao clicar em salvar, as informações irão direto para a planilha na nuvem.")
+    st.write("Insira as informações nos campos abaixo para salvar permanentemente na nuvem de forma segura:")
     
-    with st.form("form_cadastro_direto"):
-        nome_cliente = st.text_input("Nome Completo do Cliente:")
-        valor_venda = st.number_input("Valor da Compra (R$):", min_value=1, step=1)
-        data_venda = st.date_input("Data da Compra:", datetime.date.today())
-        descricao_compra = st.text_area("O que foi comprado? (Ex: 1 Calça Jeans, 2 Camisetas)")
-        
-        botao_salvar = st.form_submit_button("💾 Salvar no Sistema")
-        
-        if botao_salvar:
-            if nome_cliente.strip() == "":
-                st.error("Por favor, preencha o nome do cliente.")
-            else:
-                try:
-                    # Cria a nova linha estruturada
-                    nova_linha = pd.DataFrame([{
-                        "id": int(len(df_dados) + 1),
-                        "id_cliente": nome_cliente.strip(),
-                        "valor": int(valor_venda),
-                        "data": data_venda.strftime("%Y-%m-%d"),
-                        "status": "Pendente",
-                        "descricao": descricao_compra.strip()
-                    }])
-                    
-                    # Junta com os dados existentes e atualiza a planilha mãe
-                    df_atualizado = pd.concat([df_dados.drop(columns=['saldo_devedor_atual'], errors='ignore'), nova_linha], ignore_index=True)
-                    conn.update(spreadsheet=URL_PLANILHA, data=df_atualizado)
-                    
-                    st.success(f"Excelente! A conta de {nome_cliente} de R$ {valor_venda},00 foi gravada com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar direto: {e}. Verifique se a planilha está com acesso de 'Editor' liberado para qualquer pessoa com o link.")
+    if LINK_FORMULARIO == "COLE_AQUI_O_LINK_DO_SEU_FORMULARIO_GOOGLE":
+        st.warning("⚠️ Atenção: Você precisa colar o link do seu formulário Google na linha 12 do código do GitHub para esta tela funcionar!")
+    else:
+        # Incorpora o formulário de forma transparente e elegante dentro do app
+        st.components.v1.iframe(LINK_FORMULARIO, height=650, scrolling=True)
+        st.info("💡 **Dica Didática**: Após preencher as perguntas acima e clicar no botão roxo 'Submeter/Enviar' do formulário, mude para a aba '📊 Saldo & Devedores' para acompanhar as atualizações.")
 
-# ABA 3: CONSULTAR HISTÓRICO GERAL
+# ABA 3: OPERAÇÃO DE BAIXAS PARCIAIS OU TOTAIS
 with aba3:
-    st.header("💰 Histórico Geral e Controle de Lançamentos")
-    st.write("Abaixo estão listados todos os registros armazenados no seu livro virtual. Se precisar apagar ou dar baixa manual, use o link de segurança:")
-    st.markdown(f'👉 [Abrir Planilha Google Mãe para Alterações/Exclusões]({URL_PLANILHA})')
+    st.header("💰 Dar Baixa em Pagamentos")
+    st.write("Para fazer alterações, dar baixas parciais ou atualizar valores pagos pelos clientes, clique no botão verde abaixo:")
+    st.markdown(f' <a href="{LINK_ORIGINAL}" target="_blank" style="padding: 12px 20px; background-color: #2e7d32; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">🚀 ABRIR PLANILHA COMPLETA</a> ', unsafe_allow_html=True)
     
     st.write("<br>", unsafe_allow_html=True)
+    st.subheader("🔍 Histórico Geral de Lançamentos na Planilha (Com Descrição de Itens)")
+    
     if not df_dados.empty:
         colunas_exibicao = [c for c in ['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'] if c in df_dados.columns]
         st.dataframe(df_dados[colunas_exibicao], use_container_width=True)
     else:
-        st.info("Nenhum registro encontrado.")
+        st.dataframe(df_dados, use_container_width=True)
 
 # ABA 4: ITENS EM FALTA
 with aba4:
