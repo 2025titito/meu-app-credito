@@ -5,8 +5,8 @@ import datetime
 # CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Crediário Loja São José", layout="wide")
 
-# LINK DA PLANILHA GOOGLE (Ajustado para exportação CSV e Rodapé)
-LINK_ORIGINAL = "https://docs.google.com/spreadsheets/d/1fExWOzkkBk9qGpaaDP_pfnwnjiV90FSTAgnTOvAxgqs/edit?gid=0#gid=0"
+# LINKS DA PLANILHA GOOGLE
+LINK_ORIGINAL = "https://google.com"
 LINK_CSV = "https://google.com"
 
 # AUTENTICAÇÃO SIMPLES
@@ -25,10 +25,12 @@ if not st.session_state['autenticado']:
     st.stop()
 
 # FUNÇÃO PARA CARREGAR DADOS DA PLANILHA
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def carregar_dados():
     try:
         df = pd.read_csv(LINK_CSV)
+        # Forçar nomes de colunas padrão para evitar erros de leitura
+        df.columns = [c.strip().lower() for c in df.columns]
         return df
     except Exception as e:
         st.error(f"Erro ao ler os dados da Planilha Google: {e}")
@@ -38,7 +40,7 @@ df_vendas = carregar_dados()
 
 # CÁLCULO DE JUROS COMPOSTOS (2% ao mês após 30 dias de carência)
 def calcular_valor_atual(valor_original, data_venda_str, status):
-    if status.lower() == 'pago':
+    if str(status).strip().lower() == 'pago':
         return int(round(valor_original))
     
     try:
@@ -52,9 +54,7 @@ def calcular_valor_atual(valor_original, data_venda_str, status):
     if dias_atraso <= 30:
         return int(round(valor_original))
     
-    # Dias excedentes à carência de 30 dias
     dias_efetivos_atraso = dias_atraso - 30
-    # Taxa proporcional diária baseada em 2% ao mês (considerando mês de 30 dias)
     taxa_diaria = 0.02 / 30
     
     valor_atualizado = valor_original * ((1 + taxa_diaria) ** dias_efetivos_atraso)
@@ -63,22 +63,34 @@ def calcular_valor_atual(valor_original, data_venda_str, status):
 # INTERFACE PRINCIPAL
 st.title("🏬 Sistema de Crediário - Loja São José")
 
-aba1, aba2 = st.tabs(["📊 Crediário & Vendas", "📦 Itens em Falta"])
+aba1, aba2, aba3 = st.tabs(["📊 Crediário & Consultas", "➕ Lançamentos e Operações", "📦 Itens em Falta"])
 
 with aba1:
     st.header("Histórico de Lançamentos")
     if not df_vendas.empty:
-        # Criar cópia para exibição calculada
         df_exibicao = df_vendas.copy()
         if 'valor' in df_exibicao.columns and 'data' in df_exibicao.columns and 'status' in df_exibicao.columns:
-            df_exibicao['Valor Atualizado (R$)'] = df_exibicao.apply(
+            df_exibicao['valor_atualizado_r$'] = df_exibicao.apply(
                 lambda row: calcular_valor_atual(row['valor'], row['data'], row['status']), axis=1
             )
         st.dataframe(df_exibicao, use_container_width=True)
+        
+        # Relatório rápido de cobrança
+        st.subheader("📋 Relatório de Cobrança (Clientes em Atraso)")
+        if 'status' in df_exibicao.columns:
+            atrasados = df_exibicao[df_exibicao['status'].str.strip().str.lower() != 'pago']
+            if not atrasados.empty:
+                st.dataframe(atrasados, use_container_width=True)
+            else:
+                st.success("Parabéns! Nenhuma conta em atraso identificada.")
     else:
         st.info("Nenhum dado encontrado ou a planilha está vazia.")
 
 with aba2:
+    st.header("Lançamentos de Compra Fiado e Pagamentos")
+    st.info("💡 Como o aplicativo atual lê a planilha como 'Apenas Leitura pública', use o link no rodapé abaixo para adicionar, alterar ou dar baixa em pagamentos diretamente na planilha do Google Sheets.")
+
+with aba3:
     st.header("Gerenciamento Local de Itens em Falta")
     if 'itens_falta' not in st.session_state:
         st.session_state['itens_falta'] = []
@@ -92,7 +104,7 @@ with aba2:
             
     if st.session_state['itens_falta']:
         st.write("### Lista Atual:")
-        for idx, item in enumerate(st.session_state['itens_falta']):
+        for item in st.session_state['itens_falta']:
             st.write(f"- {item}")
         if st.button("Limpar Lista de Faltas"):
             st.session_state['itens_falta'] = []
@@ -100,6 +112,6 @@ with aba2:
     else:
         st.info("Nenhum item marcado como em falta no momento.")
 
-# DIVISOR VISUAL E RODAPÉ COM O LINK CORRIGIDO
+# RODAPÉ COM O LINK CORRIGIDO DA PLANILHA
 st.markdown("---")
 st.markdown(f"👉 [**Clique aqui para abrir e gerenciar sua Planilha Google diretamente**]({LINK_ORIGINAL})")
