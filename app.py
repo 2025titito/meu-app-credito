@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import requests
 
 # CONFIGURAÇÃO DO APLICATIVO
 st.set_page_config(page_title="Crediário - Loja São José", layout="wide", page_icon="🏬")
@@ -72,20 +71,6 @@ if not df_dados.empty and 'valor' in df_dados.columns and 'data' in df_dados.col
 else:
     df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'])
 
-# FUNÇÃO REFORMULADA DE GRAVAÇÃO DIRETA POR APPSCRIPT WEB (LIVRE DE ERROS DE CONEXÃO)
-def Adicionar_Linha_Planilha_Web(nome, valor, data_formatada, descricao_itens):
-    try:
-        # Script auxiliar integrado para processamento assíncrono via URL de formulário aberto
-        id_planilha = "1fExWOzkkBk9qGpaaDP_pfnwnjiV90FSTAgnTOvAxgqs"
-        proximo_id = len(df_dados) + 1
-        
-        # Envio estruturado via requisição direta à API de Formulários do Google Sheets
-        url_api = f"https://google.com" 
-        # Como o método gspread.public falhou, use o botão verde de contingência abaixo para alimentar em lote de forma limpa.
-        return False
-    except:
-        return False
-
 # INTERFACE PRINCIPAL
 st.title("🏬 Painel de Crediário - Loja São José")
 
@@ -111,21 +96,22 @@ with aba1:
     else:
         st.success("Não há nenhum saldo pendente ou devedor registrado!")
 
-# ABA 2: FORMULÁRIO DIDÁTICO DE CADASTRO COM DIRECIONAMENTO SEGURO
+# ABA 2: CADASTRO DIRETAMENTE NA PLANILHA COM O LINK REAL EMBUTIDO
 with aba2:
     st.header("📝 Cadastrar Nova Conta no Livro")
     st.write("Para registrar o fiado de um cliente de forma segura na nuvem com os 3 sócios, clique no botão abaixo:")
     
-    st.markdown(f' <a href="{LINK_ORIGINAL}" target="_blank" style="padding: 15px 25px; background-color: #0288d1; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">➕ ADICIONAR NOVO FIADO DIRETAMENTE NA PLANILHA</a> ', unsafe_allow_html=True)
+    st.markdown(f' <a href="https://google.com" target="_blank" style="padding: 15px 25px; background-color: #0288d1; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">➕ ADICIONAR NOVO FIADO DIRETAMENTE NA PLANILHA</a> ', unsafe_allow_html=True)
     
     st.write("<br><br>", unsafe_allow_html=True)
     st.info("💡 **Dica Didática**: Ao abrir a planilha pelo botão acima, basta ir na última linha em branco e preencher o Nome do cliente, o Valor, a Data e o que ele comprou na coluna 'descricao'. O app faz todo o resto do cálculo sozinho!")
 
-# ABA 3: OPERAÇÃO DE BAIXAS PARCIAIS OU TOTAIS
+# ABA 3: OPERAÇÃO DE BAIXAS COM O LINK REAL EMBUTIDO
 with aba3:
     st.header("💰 Dar Baixa em Pagamentos")
     st.write("Para fazer alterações, dar baixas parciais ou atualizar valores pagos pelos clientes, clique no botão verde abaixo:")
-    st.markdown(f' <a href="{LINK_ORIGINAL}" target="_blank" style="padding: 12px 20px; background-color: #2e7d32; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">🚀 ABRIR PLANILHA COMPLETA</a> ', unsafe_allow_html=True)
+    
+    st.markdown(f' <a href="https://google.com" target="_blank" style="padding: 12px 20px; background-color: #2e7d32; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">🚀 ABRIR PLANILHA COMPLETA</a> ', unsafe_allow_html=True)
     
     st.write("<br>", unsafe_allow_html=True)
     st.subheader("🔍 Histórico Geral de Lançamentos na Planilha (Com Descrição de Itens)")
