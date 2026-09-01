@@ -26,14 +26,14 @@ if not st.session_state['autenticado']:
     st.stop()
 
 # 2. CARREGAMENTO DOS DADOS EM TEMPO REAL
-@st.cache_data(ttl=2)  # Atualiza quase instantaneamente para os sócios
+@st.cache_data(ttl=2)
 def carregar_dados():
     try:
         df = pd.read_csv(LINK_CSV)
         df.columns = [str(c).strip().lower() for c in df.columns]
         return df
     except Exception as e:
-        return pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status'])
+        return pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao'])
 
 df_dados = carregar_dados()
 
@@ -70,24 +70,22 @@ if not df_dados.empty and 'valor' in df_dados.columns and 'data' in df_dados.col
         lambda r: calcular_valor_atual(r['valor'], r['data'], r['status']), axis=1
     )
 else:
-    df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'saldo_devedor_atual'])
+    df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'])
 
-# FUNÇÃO PARA CONECTAR E GRAVAR NA PLANILHA VIA FORMULÁRIO (MÉTODO PÚBLICO VIA WEB)
-def Adicionar_Linha_Planilha(nome, valor, data_formatada):
+# FUNÇÃO PARA GRAVAR NA PLANILHA VIA FORMULÁRIO (INCLUINDO DESCRIÇÃO)
+def Adicionar_Linha_Planilha(nome, valor, data_formatada, descricao_itens):
     try:
-        # Abre a planilha publicamente para escrita simplificada
         gc = gspread.public()
         sh = gc.open_by_url(LINK_ORIGINAL)
         worksheet = sh.get_worksheet(0)
         
-        # Calcula o próximo número de ID automático
         proximo_id = len(df_dados) + 1
         
-        # Adiciona a nova linha no final da planilha
-        worksheet.append_row([proximo_id, nome, valor, data_formatada, "Pendente"])
+        # Grava os dados incluindo a descrição na 6ª coluna
+        worksheet.append_row([proximo_id, nome, valor, data_formatada, "Pendente", descricao_itens])
         return True
     except Exception as e:
-        st.error(f"Erro técnico ao salvar: {e}. Certifique-se de que a planilha está configurada como 'Qualquer pessoa com o link pode editar'.")
+        st.error(f"Erro técnico ao salvar: {e}. Certifique-se de que a planilha está configurada como 'Qualquer pessoa com o link pode editar' e que você criou a coluna 'descricao'.")
         return False
 
 # INTERFACE PRINCIPAL
@@ -115,7 +113,7 @@ with aba1:
     else:
         st.success("Não há nenhum saldo pendente ou devedor registrado!")
 
-# ABA 2: FORMULÁRIO DIDÁTICO DE CADASTRO
+# ABA 2: FORMULÁRIO DIDÁTICO DE CADASTRO COM DESCRIÇÃO
 with aba2:
     st.header("📝 Cadastrar Nova Conta no Livro")
     st.write("Preencha os campos abaixo para registrar o fiado de um cliente. O sistema salvará na nuvem automaticamente.")
@@ -124,6 +122,8 @@ with aba2:
         nome_cliente = st.text_input("Nome Completo do Cliente:")
         valor_venda = st.number_input("Valor da Compra (R$):", min_value=1, step=1)
         data_venda = st.date_input("Data da Compra:", datetime.date.today())
+        # CAMPO NOVO ADICIONADO AQUI
+        descricao_compra = st.text_area("O que foi comprado? (Ex: 1 Calça Jeans, 2 Camisetas)", help="Detalhe os itens aqui para consulta futura dos sócios.")
         
         botao_salvar = st.form_submit_button("💾 Salvar no Sistema")
         
@@ -132,7 +132,7 @@ with aba2:
                 st.error("Por favor, digite o nome do cliente.")
             else:
                 data_texto = data_venda.strftime("%Y-%m-%d")
-                sucesso = Adicionar_Linha_Planilha(nome_cliente.strip(), int(valor_venda), data_texto)
+                sucesso = Adicionar_Linha_Planilha(nome_cliente.strip(), int(valor_venda), data_texto, descricao_compra.strip())
                 if sucesso:
                     st.success(f"Sucesso! A conta de {nome_cliente} de R$ {valor_venda},00 foi salva.")
                     st.cache_data.clear()
@@ -145,8 +145,14 @@ with aba3:
     st.markdown(f' <a href="{LINK_ORIGINAL}" target="_blank" style="padding: 12px 20px; background-color: #2e7d32; color: white; text-decoration: none; font-weight: bold; border-radius: 5px;">🚀 ABRIR PLANILHA COMPLETA</a> ', unsafe_allow_html=True)
     
     st.write("<br>", unsafe_allow_html=True)
-    st.subheader("🔍 Histórico Geral de Lançamentos na Planilha")
-    st.dataframe(df_dados, use_container_width=True)
+    st.subheader("🔍 Histórico Geral de Lançamentos na Planilha (Com Descrição de Itens)")
+    
+    # Reorganiza para exibir a descrição de forma bonita na tabela de histórico
+    if not df_dados.empty:
+        colunas_exibicao = [c for c in ['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'] if c in df_dados.columns]
+        st.dataframe(df_dados[colunas_exibicao], use_container_width=True)
+    else:
+        st.dataframe(df_dados, use_container_width=True)
 
 # ABA 4: ITENS EM FALTA
 with aba4:
