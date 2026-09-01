@@ -1,2 +1,2 @@
 pandas
-gspread
+st-gsheets-connection
