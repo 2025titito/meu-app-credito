@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import datetime
@@ -9,9 +8,7 @@ st.set_page_config(page_title="Crediário - Loja São José", layout="wide", pag
 # LINKS E CONFIGURAÇÃO DA PLANILHA GOOGLE
 LINK_ORIGINAL = "https://google.com"
 LINK_CSV = "https://google.com"
-
-# LINK DO SEU FORMULARIO GOOGLE (Cole o seu link copiado entre as aspas abaixo)
-LINK_FORMULARIO = "https://forms.gle/nsXr4yuL6Aiw2Ypo9"
+LINK_FORMULARIO = "https://google.com"
 
 # 1. CONTROLE DE ACESSO (SENHA)
 if 'autenticado' not in st.session_state:
@@ -108,22 +105,18 @@ with aba1:
 with aba2:
     st.header("📝 Cadastrar Nova Conta Fiada")
     st.write("Insira as informações nos campos abaixo para salvar permanentemente na nuvem de forma segura:")
-    
-    if LINK_FORMULARIO == "COLE_AQUI_O_LINK_DO_SEU_FORMULARIO_GOOGLE":
-        st.warning("⚠️ Atenção: Você precisa colar o link do seu formulário Google na linha 12 do código do GitHub para esta tela funcionar!")
-    else:
-        # Incorpora o formulário de forma transparente e elegante dentro do app
-        st.components.v1.iframe(LINK_FORMULARIO, height=650, scrolling=True)
-        st.info("💡 **Dica Didática**: Após preencher as perguntas acima e clicar no botão roxo 'Submeter/Enviar' do formulário, mude para a aba '📊 Saldo & Devedores' para acompanhar as atualizações.")
+    st.components.v1.iframe(LINK_FORMULARIO, height=650, scrolling=True)
 
-# ABA 3: OPERAÇÃO DE BAIXAS PARCIAIS OU TOTAIS
+# ABA 3: OPERAÇÃO DE BAIXAS PARCIAIS OU TOTAIS (BOTÃO CORRIGIDO INFALÍVEL)
 with aba3:
     st.header("💰 Dar Baixa em Pagamentos")
-    st.write("Para fazer alterações, dar baixas parciais ou atualizar valores pagos pelos clientes, clique no botão verde abaixo:")
-    st.markdown(f' <a href="{LINK_ORIGINAL}" target="_blank" style="padding: 12px 20px; background-color: #2e7d32; color: white; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">🚀 ABRIR PLANILHA COMPLETA</a> ', unsafe_allow_html=True)
+    st.write("Clique no botão abaixo para abrir a Planilha Google Oficial. Altere o valor ou mude o status para 'Pago' diretamente por lá:")
+    
+    # BOTÃO OFICIAL DO STREAMLIT - ABRE DIRETAMENTE A PLANILHA DA LOJA SEM ERROS
+    st.link_button("🟢 ABRIR LIVRO DE CONTAS (PLANILHA GOOGLE)", LINK_ORIGINAL, use_container_width=True)
     
     st.write("<br>", unsafe_allow_html=True)
-    st.subheader("🔍 Histórico Geral de Lançamentos na Planilha (Com Descrição de Itens)")
+    st.subheader("🔍 Histórico Geral de Lançamentos na Planilha")
     
     if not df_dados.empty:
         colunas_exibicao = [c for c in ['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'] if c in df_dados.columns]
