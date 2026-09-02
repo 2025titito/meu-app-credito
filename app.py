@@ -22,8 +22,9 @@ if not st.session_state.autenticado:
     st.stop()
 
 # URL e credenciais da planilha
-URL_PLANILHA = "https://google.com" # Substitua pelo link real da sua planilha
-URL_CSV = "https://google.com" # Substitua pelo link real de exportação
+URL_PLANILHA = "https://google.com"
+URL_CSV = "https://google.com"
+
 
 # Função para carregar dados via CSV (leitura em tempo real)
 def carregar_dados():
