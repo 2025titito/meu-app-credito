@@ -21,18 +21,16 @@ if not st.session_state.autenticado:
             st.error("Senha incorreta!")
     st.stop()
 
-# URLs configuradas apontando direto para a aba "Respostas do Formulário 1" (gid=2113690102)
+# URLs configuradas apontando para a aba correta
 URL_PLANILHA = "https://google.com"
 URL_CSV = "https://google.com"
 
-# Função para carregar dados via CSV (leitura em tempo real)
+# Função para carregar dados via CSV
 def carregar_dados():
     try:
         df = pd.read_csv(URL_CSV)
-        # Padroniza o nome das colunas removendo espaços e letras maiúsculas
         df.columns = [str(col).strip().lower() for col in df.columns]
         
-        # Garante que as colunas essenciais existem antes de converter
         if 'data' in df.columns and 'valor' in df.columns:
             df['data'] = pd.to_datetime(df['data']).dt.date
             df['valor'] = pd.to_numeric(df['valor']).fillna(0)
@@ -43,7 +41,7 @@ def carregar_dados():
         st.error(f"Erro ao ler a planilha: {e}")
         return pd.DataFrame(columns=["id", "id_cliente", "valor", "data", "status", "descricao"])
 
-# Função para calcular juros compostos (2% ao mês após 30 dias de carência)
+# Função para calcular juros compostos
 def calcular_valor_atual(row):
     if 'status' in row and str(row['status']).strip().lower() == 'pago':
         return 0
@@ -65,7 +63,6 @@ def conectar_gspread():
     try:
         gc = gspread.public()
         sh = gc.open_by_url(URL_PLANILHA)
-        # Força o gspread a abrir especificamente a aba do formulário pelo nome exato
         return sh.worksheet("Respostas do Formulário 1")
     except Exception as e:
         st.error(f"Erro de conexão com gspread: {e}")
@@ -73,6 +70,12 @@ def conectar_gspread():
 
 # Carrega os dados atuais
 df_dados = carregar_dados()
+
+# Aplica juros se a planilha não estiver vazia
+if not df_dados.empty and 'data' in df_dados.columns:
+    df_dados['valor_atual'] = df_dados.apply(calcular_valor_atual, axis=1)
+else:
+    df_dados['valor_atual'] = 0
 
 # Criação das 4 Abas do Sistema
 aba1, aba2, aba3, aba4 = st.tabs([
@@ -87,9 +90,7 @@ aba1, aba2, aba3, aba4 = st.tabs([
 # ---------------------------------------------------------
 with aba1:
     st.header("Resumo do Crediário")
-    if not df_dados.empty and 'data' in df_dados.columns:
-        df_dados['valor_atual'] = df_dados.apply(calcular_valor_atual, axis=1)
-        
+    if not df_dados.empty and 'valor_atual' in df_dados.columns:
         saldo_total = df_dados['valor_atual'].sum()
         st.metric(label="Saldo Total na Praça (com Juros)", value=f"R$ {saldo_total}")
         
@@ -138,13 +139,48 @@ with aba2:
                 st.warning("Por favor, preencha o nome do cliente e o valor.")
 
 # ---------------------------------------------------------
-# ABA 3: DAR BAIXA / PAGAMENTOS
+# ABA 3: DAR BAIXA / PAGAMENTOS (Nova tela direto no App)
 # ---------------------------------------------------------
 with aba3:
-    st.header("Dar Baixa ou Alterar Valores")
-    st.write("Para fazer baixas parciais, alterar o status para **'Pago'** ou consultar detalhes, use o link direto para a planilha mãe:")
+    st.header("Dar Baixa em Pagamentos")
     
-    st.link_button("Abrir Planilha Mãe (Google Sheets)", URL_PLANILHA)
+    # Filtra apenas quem deve no momento para facilitar a escolha dos sócios
+    if not df_dados.empty and 'status' in df_dados.columns:
+        df_devedores = df_dados[df_dados['valor_atual'] > 0]
+        
+        if not df_devedores.empty:
+            st.write("Selecione o cliente abaixo que veio fazer o pagamento total:")
+            
+            # Lista única de clientes devedores para selecionar
+            lista_clientes = sorted(df_devedores['id_cliente'].unique())
+            
+            with st.form("form_dar_baixa", clear_on_submit=True):
+                cliente_selecionado = st.selectbox("Escolha o Cliente:", lista_clientes)
+                
+                botao_quitar = st.form_submit_button("Quitar Todas as Dívidas deste Cliente")
+                
+                if botao_quitar:
+                    aba_sheet = conectar_gspread()
+                    if aba_sheet:
+                        try:
+                            # Procura todas as linhas desse cliente na planilha para mudar para 'Pago'
+                            celulas = aba_sheet.findall(cliente_selecionado)
+                            
+                            # Percorre as células encontradas e altera a coluna 'status' (Coluna 5 ou E)
+                            linhas_atualizadas = 0
+                            for celula in celulas:
+                                if celula.col == 2: # Garante que achou na coluna id_cliente
+                                    aba_sheet.update_cell(celula.row, 5, "Pago")
+                                    linhas_atualizadas += 1
+                            
+                            st.success(f"Ótimo! Todas as contas de '{cliente_selecionado}' foram marcadas como PAGAS!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar status na planilha: {e}")
+        else:
+            st.info("Não há nenhuma dívida pendente na praça no momento.")
+    else:
+        st.info("Planilha vazia.")
 
 # ---------------------------------------------------------
 # ABA 4: ITENS EM FALTA
