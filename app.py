@@ -1,137 +1,165 @@
 import streamlit as st
 import pandas as pd
-import datetime
+import gspread
+from datetime import datetime
 
-# CONFIGURACAO DO APLICATIVO
-st.set_page_config(page_title="Crediario - Loja Sao Jose", layout="wide", page_icon="🏬")
+# Configuração da página
+st.set_page_config(page_title="App Crediário Loja", layout="wide")
 
-# ENDERECO MAE DA PLANILHA GOOGLE (Texto Puro e Seguro)
-LINK_PLANILHA_MAE = "https://google.com"
-LINK_CSV = "https://google.com"
+# 1. AUTENTICAÇÃO (Senha Global)
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
 
-# 1. CONTROLE DE ACESSO (SENHA)
-if 'autenticado' not in st.session_state:
-    st.session_state['autenticado'] = False
-
-if not st.session_state['autenticado']:
-    st.title("🔑 Sistema de Crediario - Identificacao")
-    senha = st.text_input("Digite a senha dos Socios:", type="password")
-    if st.button("Acessar Sistema"):
+if not st.session_state.autenticado:
+    st.title("🔒 Acesso Restrito - Crediário")
+    senha = st.text_input("Digite a senha global dos sócios:", type="password")
+    if st.button("Entrar"):
         if senha == "TITITO":
-            st.session_state['autenticado'] = True
+            st.session_state.autenticado = True
             st.rerun()
         else:
             st.error("Senha incorreta!")
     st.stop()
 
-# 2. CARREGAMENTO DOS DADOS EM TEMPO REAL
-@st.cache_data(ttl=2)
+# URL e credenciais da planilha
+URL_PLANILHA = "https://google.com" # Substitua pelo link real da sua planilha
+URL_CSV = "https://google.com" # Substitua pelo link real de exportação
+
+# Função para carregar dados via CSV (leitura em tempo real)
 def carregar_dados():
     try:
-        df = pd.read_csv(LINK_CSV)
-        df.columns = [str(c).strip().lower() for c in df.columns]
+        df = pd.read_csv(URL_CSV)
+        df['data'] = pd.to_datetime(df['data']).dt.date
+        df['valor'] = pd.to_numeric(df['valor'])
         return df
     except Exception as e:
-        return pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao'])
+        st.error(f"Erro ao ler a planilha: {e}")
+        return pd.DataFrame(columns=["id", "id_cliente", "valor", "data", "status", "descricao"])
 
-df_dados = carregar_dados()
-
-# 3. FUNCAO DE JUROS COMPOSTOS (2% ao mes apos 30 dias de carencia)
-def calcular_valor_atual(valor_original, data_venda_str, status):
-    try:
-        valor_original = float(valor_original)
-    except:
-        return 0
-        
-    if str(status).strip().lower() == 'pago':
+# Função para calcular juros compostos (2% ao mês após 30 dias de carência)
+def calcular_valor_atual(row):
+    if row['status'].strip().lower() == 'pago':
         return 0
     
-    try:
-        data_venda = pd.to_datetime(data_venda_str).date()
-    except:
-        return int(round(valor_original))
-        
-    hoje = datetime.date.today()
-    dias_atraso = (hoje - data_venda).days
+    data_compra = row['data']
+    hoje = datetime.now().date()
+    dias_atraso = (hoje - data_compra).days
     
     if dias_atraso <= 30:
-        return int(round(valor_original))
+        return int(round(row['valor']))
     
-    dias_efetivos_atraso = dias_atraso - 30
-    taxa_diaria = 0.02 / 30
-    
-    valor_atualizado = valor_original * ((1 + taxa_diaria) ** dias_efetivos_atraso)
-    return int(round(valor_atualizado))
+    # Juros compostos proporcionais aos dias após a carência
+    # 2% ao mês = (1 + 0.02) ** (meses) -> meses = (dias - 30) / 30
+    dias_com_juros = dias_atraso - 30
+    meses = dias_com_juros / 30.0
+    valor_final = row['valor'] * ((1 + 0.02) ** meses)
+    return int(round(valor_final))
 
-# PROCESSAMENTO DE DADOS
-if not df_dados.empty and 'valor' in df_dados.columns and 'data' in df_dados.columns and 'status' in df_dados.columns:
-    df_dados['status'] = df_dados['status'].fillna('Pendente')
-    df_dados['saldo_devedor_atual'] = df_dados.apply(
-        lambda r: calcular_valor_atual(r['valor'], r['data'], r['status']), axis=1
-    )
-else:
-    df_dados = pd.DataFrame(columns=['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'])
+# Inicializar gspread para escrita
+def conectar_gspread():
+    try:
+        # Nota: gspread.public() funciona para planilhas públicas sem arquivo JSON de credenciais
+        gc = gspread.public()
+        sh = gc.open_by_url(URL_PLANILHA)
+        return sh.get_worksheet(0)
+    except Exception as e:
+        st.error(f"Erro de conexão com gspread: {e}")
+        return None
 
-# INTERFACE PRINCIPAL
-st.title("🏬 Painel de Crediario - Loja Sao Jose")
+# Carrega os dados atuais
+df_dados = carregar_dados()
 
+# Criação das 4 Abas do Sistema
 aba1, aba2, aba3, aba4 = st.tabs([
     "📊 Saldo & Devedores", 
     "📝 Cadastrar Novo Fiado", 
-    "💰 Dar Baixa / Pagamentos", 
+    "💳 Dar Baixa / Pagamentos", 
     "📦 Itens em Falta"
 ])
 
-# ABA 1: VISUALIZACAO DE QUEM DEVE
+# ---------------------------------------------------------
+# ABA 1: SALDO & DEVEDORES
+# ---------------------------------------------------------
 with aba1:
-    st.header("📊 Resumo Financeiro do Crediario")
-    total_fiado_atual = df_dados['saldo_devedor_atual'].sum()
-    st.metric(label="💰 Saldo Total de Fiado na Praca (Com Juros)", value=f"R$ {total_fiado_atual},00")
-    
-    st.subheader("👥 Relacao de Clientes Devedores")
-    if total_fiado_atual > 0:
-        clientes_devedores = df_dados[df_dados['saldo_devedor_atual'] > 0]
-        resumo_clientes = clientes_devedores.groupby('id_cliente')['saldo_devedor_atual'].sum().reset_index()
-        resumo_clientes.columns = ['Nome do Cliente', 'Total da Divida Atualizada (R$)']
-        st.dataframe(resumo_clientes, use_container_width=True)
-    else:
-        st.success("Não ha nenhum saldo pendente ou devedor registrado!")
-
-# ABA 2: CADASTRO COM BOTAO OFICIAL DO STREAMLIT
-with aba2:
-    st.header("📝 Cadastrar Nova Conta no Livro")
-    st.write("Clique no botao abaixo para abrir o livro. Va ate a ultima linha em branco da tabela para adicionar o cliente:")
-    st.link_button("➕ ABRIR PLANILHA PARA LANÇAR NOVO FIADO", LINK_PLANILHA_MAE, use_container_width=True)
-
-# ABA 3: OPERACAO DE BAIXAS COM BOTAO OFICIAL DO STREAMLIT
-with aba3:
-    st.header("💰 Dar Baixa em Pagamentos")
-    st.write("Clique no botao abaixo para abrir a planilha. Altere o valor restante ou mude o status para 'Pago' diretamente:")
-    st.link_button("🟢 ABRIR LIVRO DE CONTAS PARA DAR BAIXAS", LINK_PLANILHA_MAE, use_container_width=True)
-    
-    st.write("<br>", unsafe_allow_html=True)
-    st.subheader("🔍 Historico Geral de Lancamentos")
+    st.header("Resumo do Crediário")
     if not df_dados.empty:
-        colunas_exibicao = [c for c in ['id', 'id_cliente', 'valor', 'data', 'status', 'descricao', 'saldo_devedor_atual'] if c in df_dados.columns]
-        st.dataframe(df_dados[colunas_exibicao], use_container_width=True)
+        # Aplica o cálculo de juros em cada linha
+        df_dados['valor_atual'] = df_dados.apply(calcular_valor_atual, axis=1)
+        
+        saldo_total = df_dados['valor_atual'].sum()
+        st.metric(label="Saldo Total na Praça (com Juros)", value=f"R$ {saldo_total}")
+        
+        st.subheader("Dívidas por Cliente")
+        # Agrupa por cliente trazendo apenas quem tem saldo devedor
+        df_clientes = df_dados.groupby('id_cliente')['valor_atual'].sum().reset_index()
+        df_clientes = df_clientes[df_clientes['valor_atual'] > 0]
+        st.dataframe(df_clientes, use_container_width=True)
     else:
-        st.dataframe(df_dados, use_container_width=True)
+        st.info("Nenhum registro encontrado.")
 
-# ABA 4: ITENS EM FALTA
-with aba4:
-    st.header("📦 Itens em Falta na Loja")
-    if 'itens_falta' not in st.session_state:
-        st.session_state['itens_falta'] = []
+# ---------------------------------------------------------
+# ABA 2: CADASTRAR NOVO FIADO (Espaço corrigido para lançamento)
+# ---------------------------------------------------------
+with aba2:
+    st.header("Lançar Novo Fiado")
     
-    novo_item = st.text_input("Qual produto esta faltando?")
-    if st.button("Adicionar a Lista"):
-        if novo_item:
-            st.session_state['itens_falta'].append(novo_item)
+    # Formulário estruturado garantindo o espaço visual dos campos
+    with st.form("form_novo_fiado", clear_on_submit=True):
+        id_cliente = st.text_input("Quem comprou? (Nome/ID do Cliente):")
+        valor = st.number_input("Valor do Fiado (R$):", min_value=1, step=1)
+        data_compra = st.date_input("Data da Compra:", value=datetime.now().date())
+        descricao = st.text_area("Descrição / O que foi comprado:")
+        
+        botao_salvar = st.form_submit_with_clicks = st.form_submit_button("Gravar Fiado na Planilha")
+        
+        if botao_salvar:
+            if id_cliente and valor > 0:
+                aba_sheet = conectar_gspread()
+                if aba_sheet:
+                    # Gera um ID simples com base na quantidade de linhas existentes
+                    novo_id = len(df_dados) + 1
+                    novo_registro = [
+                        str(novo_id), 
+                        id_cliente, 
+                        str(valor), 
+                        data_compra.strftime("%Y-%m-%d"), 
+                        "Pendente", 
+                        descricao
+                    ]
+                    try:
+                        aba_sheet.append_row(novo_registro)
+                        st.success(f"Sucesso! Fiado de R$ {valor} para {id_cliente} foi gravado!")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar na planilha: {e}")
+            else:
+                st.warning("Por favor, preencha o nome do cliente e o valor.")
+
+# ---------------------------------------------------------
+# ABA 3: DAR BAIXA / PAGAMENTOS
+# ---------------------------------------------------------
+with aba3:
+    st.header("Dar Baixa ou Alterar Valores")
+    st.write("Para fazer baixas parciais, alterar o status para **'Pago'** ou consultar detalhes, use o link direto para a planilha mãe:")
+    
+    # Botão visual para redirecionamento direto
+    st.link_button("Abrir Planilha Mãe (Google Sheets)", URL_PLANILHA)
+
+# ---------------------------------------------------------
+# ABA 4: ITENS EM FALTA (Gerenciamento Local)
+# ---------------------------------------------------------
+with aba4:
+    st.header("Controle de Itens em Falta")
+    
+    if "itens_falta" not in st.session_state:
+        st.session_state.itens_falta = []
+        
+    with st.form("form_itens"):
+        novo_item = st.text_input("Produto Esgotado:")
+        if st.form_submit_button("Adicionar Item") and novo_item:
+            st.session_state.itens_falta.append(novo_item)
             st.rerun()
             
-    if st.session_state['itens_falta']:
-        for idx, item in enumerate(st.session_state['itens_falta']):
-            st.write(f"{idx + 1}. {item}")
-        if st.button("Limpar Lista"):
-            st.session_state['itens_falta'] = []
-            st.rerun()
+    if st.session_state.itens_falta:
+        st.subheader("Lista de Produtos Esgotados:")
+        for idx, item in enumerate(st.session_state.itens_falta):
+            st.write(f"- {item}")
