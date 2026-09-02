@@ -21,7 +21,7 @@ if not st.session_state.autenticado:
             st.error("Senha incorreta!")
     st.stop()
 
-# URL e credenciais da planilha reais da loja
+# URLs configuradas apontando direto para a aba "Respostas do Formulário 1" (gid=2113690102)
 URL_PLANILHA = "https://google.com"
 URL_CSV = "https://google.com"
 
@@ -29,24 +29,23 @@ URL_CSV = "https://google.com"
 def carregar_dados():
     try:
         df = pd.read_csv(URL_CSV)
-        
-        # CORREÇÃO DEFINITIVA: Remove espaços e deixa tudo em minúsculo nas colunas
+        # Padroniza o nome das colunas removendo espaços e letras maiúsculas
         df.columns = [str(col).strip().lower() for col in df.columns]
         
-        # Se a planilha estiver vazia, cria a estrutura correta para não dar erro
-        if df.empty:
+        # Garante que as colunas essenciais existem antes de converter
+        if 'data' in df.columns and 'valor' in df.columns:
+            df['data'] = pd.to_datetime(df['data']).dt.date
+            df['valor'] = pd.to_numeric(df['valor']).fillna(0)
+            return df
+        else:
             return pd.DataFrame(columns=["id", "id_cliente", "valor", "data", "status", "descricao"])
-            
-        df['data'] = pd.to_datetime(df['data']).dt.date
-        df['valor'] = pd.to_numeric(df['valor'])
-        return df
     except Exception as e:
         st.error(f"Erro ao ler a planilha: {e}")
         return pd.DataFrame(columns=["id", "id_cliente", "valor", "data", "status", "descricao"])
 
 # Função para calcular juros compostos (2% ao mês após 30 dias de carência)
 def calcular_valor_atual(row):
-    if str(row['status']).strip().lower() == 'pago':
+    if 'status' in row and str(row['status']).strip().lower() == 'pago':
         return 0
     
     data_compra = row['data']
@@ -56,18 +55,18 @@ def calcular_valor_atual(row):
     if dias_atraso <= 30:
         return int(round(row['valor']))
     
-    # Juros compostos proporcionais após a carência
     dias_com_juros = dias_atraso - 30
     meses = dias_com_juros / 30.0
     valor_final = row['valor'] * ((1 + 0.02) ** meses)
     return int(round(valor_final))
 
-# Inicializar gspread para escrita
+# Inicializar gspread para escrita na aba correta
 def conectar_gspread():
     try:
         gc = gspread.public()
         sh = gc.open_by_url(URL_PLANILHA)
-        return sh.get_worksheet(0)
+        # Força o gspread a abrir especificamente a aba do formulário pelo nome exato
+        return sh.worksheet("Respostas do Formulário 1")
     except Exception as e:
         st.error(f"Erro de conexão com gspread: {e}")
         return None
@@ -95,9 +94,10 @@ with aba1:
         st.metric(label="Saldo Total na Praça (com Juros)", value=f"R$ {saldo_total}")
         
         st.subheader("Dívidas por Cliente")
-        df_clientes = df_dados.groupby('id_cliente')['valor_atual'].sum().reset_index()
-        df_clientes = df_clientes[df_clientes['valor_atual'] > 0]
-        st.dataframe(df_clientes, use_container_width=True)
+        if 'id_cliente' in df_dados.columns:
+            df_clientes = df_dados.groupby('id_cliente')['valor_atual'].sum().reset_index()
+            df_clientes = df_clientes[df_clientes['valor_atual'] > 0]
+            st.dataframe(df_clientes, use_container_width=True)
     else:
         st.info("Nenhum registro ativo encontrado ou planilha vazia.")
 
