@@ -29,8 +29,14 @@ URL_CSV = "https://google.com"
 def carregar_dados():
     try:
         df = pd.read_csv(URL_CSV)
-        # Força o pandas a reconhecer os nomes exatos das colunas da planilha
+        
+        # CORREÇÃO DEFINITIVA: Remove espaços e deixa tudo em minúsculo nas colunas
         df.columns = [str(col).strip().lower() for col in df.columns]
+        
+        # Se a planilha estiver vazia, cria a estrutura correta para não dar erro
+        if df.empty:
+            return pd.DataFrame(columns=["id", "id_cliente", "valor", "data", "status", "descricao"])
+            
         df['data'] = pd.to_datetime(df['data']).dt.date
         df['valor'] = pd.to_numeric(df['valor'])
         return df
@@ -82,7 +88,7 @@ aba1, aba2, aba3, aba4 = st.tabs([
 # ---------------------------------------------------------
 with aba1:
     st.header("Resumo do Crediário")
-    if not df_dados.empty:
+    if not df_dados.empty and 'data' in df_dados.columns:
         df_dados['valor_atual'] = df_dados.apply(calcular_valor_atual, axis=1)
         
         saldo_total = df_dados['valor_atual'].sum()
@@ -93,7 +99,7 @@ with aba1:
         df_clientes = df_clientes[df_clientes['valor_atual'] > 0]
         st.dataframe(df_clientes, use_container_width=True)
     else:
-        st.info("Nenhum registro encontrado.")
+        st.info("Nenhum registro ativo encontrado ou planilha vazia.")
 
 # ---------------------------------------------------------
 # ABA 2: CADASTRAR NOVO FIADO
